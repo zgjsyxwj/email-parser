@@ -42,6 +42,8 @@ button.primary { color: #fff; background: var(--green); border-color: var(--gree
 button.primary:hover:not(:disabled) { background: var(--green-dark); }
 button.quiet { padding-inline: 9px; background: transparent; border-color: transparent; }
 button.quiet:hover:not(:disabled) { background: var(--green-pale); border-color: transparent; }
+button.output-change { color: var(--green-dark); background: var(--green-pale); border-color: var(--green); font-weight: 600; }
+button.output-change:hover:not(:disabled), button.output-change:active:not(:disabled) { color: var(--paper); background: var(--green-dark); border-color: var(--green-dark); }
 .icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 h1, h2, h3, p { margin: 0; }
 h1 { font-size: 27px; line-height: 1.25; font-weight: 650; letter-spacing: -.025em; }
