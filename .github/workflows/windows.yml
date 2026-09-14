@@ -1,0 +1,68 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: desktop-email
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop-email/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: desktop-email/sidecar/requirements*.txt
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-email/src-tauri -> target
+      - name: Install Python dependencies
+        run: python -m pip install -r sidecar/requirements-build.txt
+      - name: Test sidecar
+        run: python -m unittest discover -s tests -v
+      - name: Check frontend
+        run: |
+          node --check frontend/app.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test tests/test_frontend_protocol.mjs
+      - name: Build installers
+        run: python scripts/build_release.py --target x86_64-pc-windows-msvc --python (Get-Command python).Source
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: email-parser-windows-x64
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          include-hidden-files: true
+          path: |
+            desktop-email/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            desktop-email/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            desktop-email/.build/releases/x86_64-pc-windows-msvc/manifest.json
