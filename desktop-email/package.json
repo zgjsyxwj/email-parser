@@ -1,0 +1,14 @@
+{
+  "name": "desktop-email",
+  "private": true,
+  "version": "0.1.0",
+  "description": "邮件解析桌面应用前端",
+  "scripts": {
+    "typecheck": "node --check frontend/app.js",
+    "build:sidecar": "python3 scripts/build_sidecar.py",
+    "build:release": "python3 scripts/build_release.py"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.8.4"
+  }
+}

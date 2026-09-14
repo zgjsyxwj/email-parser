@@ -1,0 +1,5 @@
+# Runtime dependencies are pinned in requirements.txt. PyInstaller is only
+# needed by the release build and is intentionally kept out of the runtime
+# installation instructions.
+-r requirements.txt
+pyinstaller==6.16.0

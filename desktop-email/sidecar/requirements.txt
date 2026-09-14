@@ -1,0 +1,6 @@
+# -*- coding: utf-8 -*-
+# 解析 MSG 与正文回退所需的 sidecar 依赖。
+extract-msg==0.55.0
+beautifulsoup4==4.13.5
+RTFDE==0.1.2.2
+striprtf==0.0.33

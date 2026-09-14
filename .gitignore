@@ -1,0 +1,17 @@
+# 仅管理桌面应用源码，排除工作区中的业务邮件及解析结果。
+/*
+!/.gitignore
+!/README.md
+!/CONTEXT.md
+!/.github/
+!/desktop-email/
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
+.venv/
+__pycache__/
+*.pyc
+.playwright-cli/
+desktop-email/src-tauri/gen/
