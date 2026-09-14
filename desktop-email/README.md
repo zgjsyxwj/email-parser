@@ -112,6 +112,8 @@ node --check frontend/app.js
 
 ## 调试日志
 
+Windows 结果写入使用扩展长度绝对路径，支持本地盘符和 UNC 共享目录。长标题、多层嵌套邮件及暂存目录不会再依赖系统的 `LongPathsEnabled` 设置。目录层级和 Markdown 相对链接保持不变。`tests/test_windows_paths.py` 覆盖路径转换，并在 Windows 上验证超过 260 字符的嵌套结果写入、完整结果跳过和缺失附件修复。
+
 桌面应用默认启用文件调试日志，使用 Tauri 官方日志插件轮转：单文件约 5 MB，保留 3 个历史文件。
 
 - Windows：`%LOCALAPPDATA%\com.emailparser.desktop\logs`

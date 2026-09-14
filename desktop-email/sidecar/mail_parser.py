@@ -2118,6 +2118,16 @@ def _write_tree(
     )
 
 
+def _extended_windows_path(absolute_path: str) -> str:
+    """为绝对路径启用 Windows 长路径，兼容盘符和 UNC 共享目录。"""
+
+    if absolute_path.startswith("\\\\?\\"):
+        return absolute_path
+    if absolute_path.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + absolute_path[2:]
+    return "\\\\?\\" + absolute_path
+
+
 def write_result(
     parsed: ParsedEmail,
     output_root: Path,
@@ -2128,6 +2138,10 @@ def write_result(
     """递归写入邮件 Markdown、附件及子邮件目录。"""
 
     limits = _coerce_limits(limits)
+    if os.name == "nt":
+        # 在任何 mkdir/stat/copytree/replace 之前转换；递归子邮件和暂存
+        # 目录继承此前缀，避免依赖系统的 LongPathsEnabled 注册表设置。
+        output_root = Path(_extended_windows_path(os.path.abspath(output_root)))
     return _write_tree(parsed, output_root, limits=limits, cancel_event=cancel_event)
 
 
