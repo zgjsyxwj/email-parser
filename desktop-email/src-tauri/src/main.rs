@@ -931,6 +931,30 @@ fn choose_output_dir() -> Option<String> {
 }
 
 #[tauri::command]
+async fn preview_email(app: AppHandle, path: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = canonical_input(PathBuf::from(path))?;
+        if !path.is_file() || !is_email_path(&path) {
+            return Err("请选择 EML 或 MSG 邮件文件".to_string());
+        }
+        let output = sidecar_command(&app)?
+            .arg("--preview")
+            .arg(path)
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|error| format!("无法启动邮件预览：{error}"))?;
+        let preview: Value = serde_json::from_slice(&output.stdout)
+            .map_err(|_| "无法读取邮件预览，请检查 sidecar 是否完整".to_string())?;
+        if !output.status.success() || preview.get("error").is_some() {
+            return Err(preview["error"].as_str().unwrap_or("无法读取原邮件").to_string());
+        }
+        Ok(preview)
+    })
+    .await
+    .map_err(|error| format!("邮件预览任务失败：{error}"))?
+}
+
+#[tauri::command]
 fn open_result(path: String) -> Result<(), String> {
     let path = absolute(path);
     if !path.exists() {
@@ -983,6 +1007,7 @@ fn main() {
             choose_input_folder,
             inspect_input_paths,
             choose_output_dir,
+            preview_email,
             open_result
         ])
         .run(tauri::generate_context!())

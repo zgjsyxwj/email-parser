@@ -10,6 +10,10 @@
   </head>
   <body>
     <div id="app"></div>
+    <dialog id="preview" class="preview" aria-labelledby="preview-title">
+      <header class="preview-header"><h2 id="preview-title">原邮件预览</h2><button data-action="close-preview" autofocus>关闭</button></header>
+      <div id="preview-content" class="preview-content" aria-live="polite"></div>
+    </dialog>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="app.js"></script>
   </body>

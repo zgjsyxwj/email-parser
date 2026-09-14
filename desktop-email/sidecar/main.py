@@ -731,7 +731,20 @@ class SidecarServer:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="邮件解析 Python sidecar")
     parser.add_argument("--stdio", action="store_true", help="通过 stdin/stdout 提供 JSON Lines 批次服务")
+    parser.add_argument("--preview", type=Path, help="只读预览一封原邮件，不保存结果")
     args = parser.parse_args(argv)
+    if args.preview is not None:
+        try:
+            parsed = parse_email(args.preview)
+            result = {key: getattr(parsed, key) for key in
+                      ("subject", "sender", "recipients", "cc", "sent_at", "body")}
+            result["attachments"] = [attachment.filename for attachment in parsed.attachments]
+            result["warnings"] = [error.error for error in parsed.attachment_errors]
+            print(json.dumps(result, ensure_ascii=True), flush=True)
+            return 0
+        except Exception as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=True), flush=True)
+            return 1
     if not args.stdio:
         parser.error("当前只支持 --stdio")
     # The Rust bridge sends UTF-8 bytes, independent of Windows' local code page.

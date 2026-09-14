@@ -200,7 +200,7 @@ function renderTable() {
     const text = state.items.length ? "此分类暂无邮件" : "还没有加入邮件。选择一封 EML 或 MSG，开始整理。";
     return `<div class="table-wrap" tabindex="0" role="region" aria-label="邮件列表"><table class="table"><thead><tr><th>邮件</th><th>大小</th><th>状态</th></tr></thead><tbody><tr><td colspan="3"><div class="empty">${text}</div></td></tr></tbody></table></div>`;
   }
-  return `<div class="table-wrap" tabindex="0" role="region" aria-label="邮件列表"><table class="table"><thead><tr><th>邮件</th><th>大小</th><th>状态</th></tr></thead><tbody>${rows.map((item) => `<tr><td><div class="mailcell"><span class="file-icon">${/\.msg$/i.test(item.name) ? "MSG" : "EML"}</span><div class="grow"><div class="mail-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div><div class="mail-meta">${item.error ? escapeHtml(item.error) : "源文件保持原位"}</div></div></div></td><td class="note mono">${escapeHtml(item.size)}</td><td>${statusBadge(item.status)}${item.mailDir ? `<div class="result-actions">${item.markdownPath ? `<button class="result-open" data-action="open" data-path="${escapeHtml(item.markdownPath)}">打开邮件.md ${icon("open")}</button>` : ""}<button class="result-open" data-action="open" data-path="${escapeHtml(item.mailDir)}">打开目录 ${icon("open")}</button></div>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap" tabindex="0" role="region" aria-label="邮件列表"><table class="table"><thead><tr><th>邮件</th><th>大小</th><th>状态</th></tr></thead><tbody>${rows.map((item) => `<tr><td><div class="mailcell"><span class="file-icon">${/\.msg$/i.test(item.name) ? "MSG" : "EML"}</span><div class="grow"><div class="mail-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div><div class="mail-meta">${item.error ? escapeHtml(item.error) : "源文件保持原位"}</div></div></div></td><td class="note mono">${escapeHtml(item.size)}</td><td>${statusBadge(item.status)}<div class="result-actions"><button class="result-open" data-action="preview" data-id="${escapeHtml(item.id)}">预览原邮件</button></div>${item.mailDir ? `<div class="result-actions">${item.markdownPath ? `<button class="result-open" data-action="open" data-path="${escapeHtml(item.markdownPath)}">打开邮件.md ${icon("open")}</button>` : ""}<button class="result-open" data-action="open" data-path="${escapeHtml(item.mailDir)}">打开目录 ${icon("open")}</button></div>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function renderSettings() {
@@ -420,6 +420,51 @@ async function cancelBatch() {
   }
 }
 
+let previewRequest = 0;
+let previewItemId = null;
+
+async function previewEmail(id) {
+  const item = state.items.find((candidate) => candidate.id === id);
+  if (!item) return;
+  const request = ++previewRequest;
+  previewItemId = id;
+  const dialog = document.getElementById("preview");
+  const content = document.getElementById("preview-content");
+  content.innerHTML = `<p class="note preview-source">${escapeHtml(item.name)}</p><p role="status">正在读取原邮件…</p>`;
+  if (!dialog.open) dialog.showModal();
+  try {
+    const mail = await invoke("preview_email", { path: item.path });
+    if (request !== previewRequest || !dialog.open) return;
+    const headers = [["发件人", mail.sender], ["收件人", mail.recipients], ["抄送", mail.cc], ["发送时间", mail.sent_at]];
+    content.innerHTML = `<p class="note preview-source">${escapeHtml(item.name)}</p>
+      <h3 class="preview-subject">${escapeHtml(mail.subject || "无标题邮件")}</h3>
+      <dl class="preview-metadata">${headers.map(([label, value]) => `<dt>${label}</dt><dd>${escapeHtml(value || "未提供")}</dd>`).join("")}</dl>
+      ${mail.attachments?.length ? `<div class="preview-attachments"><h3>附件（${mail.attachments.length}）</h3><ul>${mail.attachments.map((name) => `<li>${escapeHtml(name || "未命名附件")}</li>`).join("")}</ul></div>` : ""}
+      ${mail.warnings?.length ? `<p class="preview-warning">部分附件无法读取：${escapeHtml(mail.warnings.join("；"))}</p>` : ""}
+      <p class="note">正文以纯文本显示，保留历史引用和签名。</p>
+      <div class="preview-body">${escapeHtml(mail.body || "此邮件没有可显示的正文。")}</div>`;
+  } catch (error) {
+    if (request !== previewRequest || !dialog.open) return;
+    content.innerHTML = `<p class="note preview-source">${escapeHtml(item.name)}</p><p role="alert">${escapeHtml(errorMessage(error, "无法读取原邮件。"))}</p><button data-action="preview" data-id="${escapeHtml(id)}">重试预览</button>`;
+  }
+}
+
+function closePreview() {
+  ++previewRequest;
+  document.getElementById("preview").close();
+  document.getElementById("preview-content").innerHTML = "";
+  const trigger = Array.from(appRoot.querySelectorAll('[data-action="preview"]'))
+    .find((button) => button.dataset.id === previewItemId);
+  trigger?.focus();
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && document.getElementById("preview").open) {
+    event.preventDefault();
+    closePreview();
+  }
+});
+
 async function openResult(path) {
   try {
     await invoke("open_result", { path });
@@ -451,6 +496,8 @@ document.addEventListener("click", (event) => {
   if (name === "start") startBatch();
   if (name === "cancel") cancelBatch();
   if (name === "open") openResult(action.dataset.path);
+  if (name === "preview") previewEmail(action.dataset.id);
+  if (name === "close-preview") closePreview();
 });
 
 document.addEventListener("input", (event) => {
