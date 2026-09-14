@@ -18,7 +18,7 @@ import shutil
 import threading
 import unicodedata
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from email import policy
 from email.parser import BytesParser
@@ -2138,11 +2138,14 @@ def write_result(
     """递归写入邮件 Markdown、附件及子邮件目录。"""
 
     limits = _coerce_limits(limits)
+    result_root = output_root
     if os.name == "nt":
         # 在任何 mkdir/stat/copytree/replace 之前转换；递归子邮件和暂存
         # 目录继承此前缀，避免依赖系统的 LongPathsEnabled 注册表设置。
         output_root = Path(_extended_windows_path(os.path.abspath(output_root)))
-    return _write_tree(parsed, output_root, limits=limits, cancel_event=cancel_event)
+    result = _write_tree(parsed, output_root, limits=limits, cancel_event=cancel_event)
+    # 扩展前缀仅供文件系统调用使用；对外路径沿用调用者的输出目录形式。
+    return replace(result, mail_dir=result_root / result.mail_dir.name)
 
 
 __all__ = [

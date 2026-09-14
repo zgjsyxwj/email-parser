@@ -31,9 +31,10 @@ class WindowsOutputPathTests(unittest.TestCase):
                 def require_extended_path(parsed, root, **kwargs):
                     if not str(root).startswith("\\\\?\\"):
                         raise OSError("Windows 长路径必须使用扩展路径")
-                    return "written"
+                    return parser.WriteResult(root / "mail", False, "success", 0, 0, [])
                 writer.side_effect = require_extended_path
-                self.assertEqual(parser.write_result(None, Path("results")), "written")
+                result = parser.write_result(None, Path("results"))
+                self.assertEqual(result.mail_dir, Path("results") / "mail")
 
     @unittest.skipUnless(os.name == "nt", "需要 Windows 文件系统")
     def test_nested_long_paths_write_repair_and_skip(self):
