@@ -9,6 +9,22 @@ from pathlib import Path
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_protocol_uses_utf8_despite_local_stdio_encoding(self):
+        for encoding, folder in (("cp950", "両"), ("gbk", "丁")):
+            with self.subTest(encoding=encoding):
+                command = {"type": "start", "batch_id": "encoding-test", "request_id": "test",
+                           "inputs": [f"C:\\{folder}\\a.eml"], "output_dir": ""}
+                result = subprocess.run(
+                    [sys.executable, str(Path(__file__).resolve().parents[1] / "sidecar/main.py"), "--stdio"],
+                    input=(json.dumps(command, ensure_ascii=False) + "\n").encode("utf-8"),
+                    capture_output=True, timeout=10,
+                    env={**os.environ, "PYTHONIOENCODING": encoding},
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                events = [json.loads(line) for line in result.stdout.decode("utf-8").splitlines()]
+                self.assertTrue(events)
+                self.assertEqual(events[0]["type"], "batch_rejected", events)
+
     def test_debug_logs_identify_mail_without_leaking_body_or_breaking_jsonl(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -459,6 +459,7 @@ fn forward_events<R: tauri::Runtime + 'static>(
         let reader = BufReader::new(stdout);
         let mut completed = false;
         let mut terminal_error = "sidecar stdout unexpectedly closed".to_string();
+        let mut protocol_failed = false;
         let mut total = 0u64;
         let mut succeeded = 0u64;
         let mut partial_failed = 0u64;
@@ -473,6 +474,13 @@ fn forward_events<R: tauri::Runtime + 'static>(
                 Ok(line) if line.trim().is_empty() => {}
                 Ok(line) => match serde_json::from_str::<Value>(&line) {
                     Ok(event) => {
+                        if event.get("type").and_then(Value::as_str) == Some("protocol_error") {
+                            protocol_failed = true;
+                            terminal_error = format!("sidecar 拒绝通信命令：{}：{}",
+                                event.get("code").and_then(Value::as_str).unwrap_or("unknown"),
+                                event.get("error").and_then(Value::as_str).unwrap_or("协议错误"));
+                            break;
+                        }
                         match event.get("type").and_then(Value::as_str) {
                             Some("batch_started") => {
                                 total = event
@@ -576,6 +584,8 @@ fn forward_events<R: tauri::Runtime + 'static>(
                 "cancel_timeout"
             } else if cancel_requested {
                 "cancelled_eof"
+            } else if protocol_failed {
+                "protocol_error"
             } else {
                 "unexpected_eof"
             };
@@ -1011,6 +1021,37 @@ mod tests {
         clear_process(&state, "eof-test");
         assert!(started.elapsed() < Duration::from_secs(3));
         assert!(state.lock().expect("读取测试状态").is_none());
+    }
+
+    #[test]
+    fn protocol_error_finishes_batch_without_waiting_for_eof() {
+        let app = tauri::test::mock_app();
+        let mut child = Command::new("sh")
+            .args(["-c", "printf '%s\\n' '{\"type\":\"protocol_error\",\"code\":\"invalid_json\",\"error\":\"Invalid escape\"}'; read next"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn().expect("启动协议错误测试进程");
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let state = Arc::new(Mutex::new(Some(SidecarProcess {
+            batch_id: "protocol-test".to_string(), stdin, child,
+            cancel_requested: false, cancel_watchdog_started: false, force_killed: false,
+        })));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        forward_events(app.handle().clone(), state.clone(), events.clone(),
+            "protocol-test".to_string(), "request".to_string(), stdout);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if state.lock().unwrap().is_none() { break; }
+            assert!(Instant::now() < deadline, "协议错误未结束批次");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let emitted = events.lock().unwrap();
+        assert!(emitted.iter().any(|event| event["type"] == "bridge_error"
+            && event["code"] == "protocol_error"));
+        assert!(emitted.iter().any(|event| event["type"] == "batch_completed"
+            && event["status"] == "failed"));
     }
 
     #[test]

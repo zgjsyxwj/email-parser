@@ -734,6 +734,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.stdio:
         parser.error("当前只支持 --stdio")
+    # The Rust bridge sends UTF-8 bytes, independent of Windows' local code page.
+    # Configure streams here as frozen executables also use this entry point.
+    sys.stdin.reconfigure(encoding="utf-8", errors="strict")
+    sys.stdout.reconfigure(encoding="utf-8", errors="strict")
+    sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
     logging.basicConfig(level=logging.DEBUG, stream=sys.stderr,
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
     logging.getLogger().setLevel(logging.WARNING)

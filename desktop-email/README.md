@@ -42,6 +42,8 @@ sidecar 会立即返回 `cancel_requested`，停止调度尚未开始的邮件�
 
 Rust 桥接将这些事件转发为 `sidecar-event`，同时提供 `drain_batch_events` 给前端轮询。sidecar 输出意外 EOF 时，桥接会把 `bridge_error` 和失败的 `batch_completed` 写入同一个事件缓冲，前端不会停留在运行中。
 
+stdin/stdout JSON Lines 固定使用 UTF-8，不依赖 Windows 本地代码页。sidecar 的 stderr 日志也使用 UTF-8。收到 `protocol_error` 时，Rust 桥接会结束当前批次并报告错误，避免界面一直等待。
+
 ## 结果布局
 
 ```text
