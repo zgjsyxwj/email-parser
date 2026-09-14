@@ -105,3 +105,14 @@ node --check frontend/app.js
 ```
 
 开发时 Rust 会运行 `sidecar/main.py`，也可通过 `EMAIL_SIDECAR_PATH` 指定调试 sidecar。发行版只使用安装包 `Resources/sidecar` 中的可执行文件。输入源只读，结果通过系统的 `open`、`cmd /C start` 或 `xdg-open` 打开。
+
+## 调试日志
+
+桌面应用默认启用文件调试日志，使用 Tauri 官方日志插件轮转：单文件约 5 MB，保留 3 个历史文件。
+
+- Windows：`%LOCALAPPDATA%\com.emailparser.desktop\logs`
+- macOS：`~/Library/Logs/com.emailparser.desktop`
+
+日志包含应用版本、sidecar 启动信息、批次 ID、邮件序号、源文件名、可读取的邮件标题、解析耗时、状态、失败阶段和错误码。解析前失败时可通过文件名定位；解析后的失败可用相同批次 ID 和序号关联先前记录的标题。日志不主动记录正文、附件内容或完整 JSONL 数据。
+
+单独运行源码 sidecar 时默认只记录启动和退出；设置 `EMAIL_LOG_LEVEL=DEBUG` 可启用详细日志。日志输出到 stderr，stdout 仅用于 JSONL。桌面端会持续读取 stderr 并写入应用日志。收集故障信息时请附上对应时间段的日志。

@@ -12,6 +12,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -64,8 +65,11 @@ def build_python(value: str | None) -> str:
 
 
 def run(command: list[str]) -> None:
+    started = time.monotonic()
+    print(f"[build] start: {command}", flush=True)
     try:
         subprocess.run(command, cwd=PROJECT_ROOT, check=True)
+        print(f"[build] completed in {time.monotonic() - started:.1f}s", flush=True)
     except FileNotFoundError as exc:
         raise SystemExit(f"找不到构建命令：{command[0]}；请先安装对应工具链。") from exc
     except subprocess.CalledProcessError as exc:

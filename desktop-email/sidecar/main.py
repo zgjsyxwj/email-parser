@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
+import time
 import os
 import queue
 import sys
@@ -38,6 +40,20 @@ except ImportError:  # ``python sidecar/main.py --stdio``
 
 PROTOCOL_VERSION = 1
 EMAIL_SUFFIXES = {".eml", ".msg"}
+LOGGER = logging.getLogger("email_sidecar")
+
+
+def diagnostic_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Only log identifiers and operational metadata; never body or attachment data."""
+    fields = ("type", "batch_id", "request_id", "item_id", "index", "status",
+              "subject", "stage", "code", "total", "attachments", "nested_emails")
+    result = {key: event[key] for key in fields if key in event}
+    if event.get("source_path"):
+        result["file"] = Path(event["source_path"]).name
+    if event.get("errors"):
+        result["errors"] = [{key: error[key] for key in ("stage", "code") if key in error}
+                            for error in event["errors"] if isinstance(error, dict)]
+    return result
 
 
 @dataclass(frozen=True)
@@ -278,6 +294,7 @@ class SidecarServer:
         self._emit_lock = threading.Lock()
 
     def emit(self, event: dict[str, Any]) -> None:
+        LOGGER.debug("event %s", json.dumps(diagnostic_event(event), ensure_ascii=False))
         payload = {"protocol_version": PROTOCOL_VERSION, **event}
         with self._emit_lock:
             self._emit_locked(payload)
@@ -529,7 +546,11 @@ class SidecarServer:
                     }
                 )
                 try:
+                    item_started = time.monotonic()
                     parsed = parse_email(source)
+                    LOGGER.debug("parsed batch=%r index=%s file=%r subject=%r elapsed_ms=%.1f",
+                                 batch_id, index, source.name, parsed.subject,
+                                 (time.monotonic() - item_started) * 1000)
                     if cancel_event.is_set():
                         summary["cancelled"] += self._emit_cancelled_items(
                             batch_id=batch_id,
@@ -599,6 +620,8 @@ class SidecarServer:
                     }
                     if result_errors:
                         item_event["errors"] = result_errors
+                    LOGGER.debug("item_finished batch=%r index=%s elapsed_ms=%.1f",
+                                 batch_id, index, (time.monotonic() - item_started) * 1000)
                     self.emit(item_event)
                 except CancellationRequested:
                     summary["cancelled"] += self._emit_cancelled_items(
@@ -711,7 +734,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.stdio:
         parser.error("当前只支持 --stdio")
-    return SidecarServer().run()
+    logging.basicConfig(level=logging.DEBUG, stream=sys.stderr,
+                        format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.getLogger().setLevel(logging.WARNING)
+    LOGGER.setLevel(logging.DEBUG if os.environ.get("EMAIL_LOG_LEVEL") == "DEBUG" else logging.INFO)
+    LOGGER.info("sidecar_start python=%s platform=%s frozen=%s pid=%s",
+                sys.version.split()[0], sys.platform, bool(getattr(sys, "frozen", False)), os.getpid())
+    try:
+        return SidecarServer().run()
+    finally:
+        LOGGER.info("sidecar_exit")
 
 
 if __name__ == "__main__":

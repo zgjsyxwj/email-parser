@@ -302,10 +302,20 @@ fn stop_child(child: &mut Child) {
 }
 
 fn record_event<R: tauri::Runtime>(app: &AppHandle<R>, events: &Arc<Mutex<Vec<Value>>>, event: Value) {
+    let diagnostic = json!({
+        "type": event.get("type"), "batch_id": event.get("batch_id"),
+        "index": event.get("index"), "status": event.get("status"),
+        "subject": event.get("subject"), "code": event.get("code"),
+        "file": event.get("source_path").and_then(Value::as_str)
+            .and_then(|path| Path::new(path).file_name()).map(|name| name.to_string_lossy()),
+    });
+    log::debug!("sidecar_event {}", diagnostic);
     if let Ok(mut buffer) = events.lock() {
         buffer.push(event.clone());
     }
-    let _ = app.emit(SIDECAR_EVENT, event);
+    if let Err(error) = app.emit(SIDECAR_EVENT, event) {
+        log::error!("event_delivery_failed: {error}");
+    }
 }
 
 fn emit_bridge_error<R: tauri::Runtime>(
@@ -353,6 +363,7 @@ fn clear_process(state: &Arc<Mutex<Option<SidecarProcess>>>, batch_id: &str) {
 }
 
 fn reap_process(process: SidecarProcess) {
+    log::debug!("sidecar_reap pid={}", process.child.id());
     let SidecarProcess {
         stdin, mut child, ..
     } = process;
@@ -407,6 +418,7 @@ fn start_cancel_watchdog(state: Arc<Mutex<Option<SidecarProcess>>>, batch_id: St
             match process.child.try_wait() {
                 Ok(Some(_)) => return,
                 Ok(None) if Instant::now() >= deadline => {
+                    log::warn!("sidecar_cancel_timeout batch_id={:?}", batch_id);
                     process.force_killed = true;
                     let _ = process.child.kill();
                     return;
@@ -429,6 +441,7 @@ fn drain_stderr(stderr: impl std::io::Read + Send + 'static) {
             if sink.is_empty() {
                 break;
             }
+            log::debug!(target: "desktop_email::sidecar", "{}", sink.trim_end());
             sink.clear();
         }
     });
@@ -681,14 +694,25 @@ fn start_batch(
     }
     drop(state_arc);
 
-    let mut command = sidecar_command(&app)?;
+    log::info!("batch_start batch_id={:?} inputs={} max_depth={} max_extract_bytes={}",
+        request.batch_id, request.inputs.len(), request.limits.max_depth, request.limits.max_extract_bytes);
+    let mut command = sidecar_command(&app).map_err(|error| {
+        log::error!("sidecar_resolve_failed: {error}");
+        error
+    })?;
+    command.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8").env("EMAIL_LOG_LEVEL", "DEBUG");
+    log::debug!("sidecar_launch program={:?}", command.get_program());
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = command
         .spawn()
-        .map_err(|error| format!("启动 Python sidecar 失败：{error}"))?;
+        .map_err(|error| {
+            log::error!("sidecar_spawn_failed: {error}");
+            format!("启动 Python sidecar 失败：{error}")
+        })?;
+    log::info!("sidecar_started pid={}", child.id());
     let mut stdin = match child.stdin.take() {
         Some(value) => value,
         None => {
@@ -844,6 +868,7 @@ fn cancel_batch(
         .process
         .lock()
         .map_err(|_| "读取 sidecar 状态失败".to_string())?;
+    log::info!("batch_cancel batch_id={:?}", batch_id);
     let process = guard
         .as_mut()
         .ok_or_else(|| "当前没有运行中的批次".to_string())?;
@@ -927,6 +952,18 @@ fn open_result(path: String) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new()
+            .level(log::LevelFilter::Info)
+            .level_for("desktop_email", log::LevelFilter::Debug)
+            .max_file_size(5_000_000)
+            .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
+            .build())
+        .setup(|app| {
+            log::info!("app_start version={} os={} arch={} debug={} log_dir={:?}",
+                env!("CARGO_PKG_VERSION"), std::env::consts::OS,
+                std::env::consts::ARCH, cfg!(debug_assertions), app.path().app_log_dir());
+            Ok(())
+        })
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             start_batch,
